@@ -145,14 +145,68 @@ function! s:show_blame(lnum, blame_text) abort
     return
   endif
 
-  " Get line length
+  " Get window width
+  let l:window_width = winwidth(0)
+
+  " Get the actual line content
   let l:line = getline(a:lnum)
-  let l:col = strdisplaywidth(l:line) + 1
+
+  " Calculate the byte column where we should add the property (end of line + 1)
+  let l:col = len(l:line) + 1
+
+  " Get display width to check for virtual text (inlay hints)
+  let l:line_display_width = strdisplaywidth(l:line)
+
+  " Try to get virtual column at end of line to detect inlay hints
+  try
+    let l:virtual_col = virtcol([a:lnum, '$'])
+  catch
+    let l:virtual_col = l:line_display_width
+  endtry
+
+  " Calculate available display width (accounting for inlay hints)
+  let l:actual_display_width = max([l:virtual_col, l:line_display_width])
+  let l:available_width = l:window_width - l:actual_display_width
+
+  " Don't display if line is already at or beyond window width
+  if l:actual_display_width >= l:window_width
+    return
+  endif
+
+  " Truncate blame text if it exceeds available width
+  let l:text_to_display = a:blame_text
+  if strdisplaywidth(a:blame_text) > l:available_width
+    " Need at least 7 characters (1 + 3 for ellipsis + 3 safety margin)
+    if l:available_width < 7
+      return
+    endif
+
+    " Truncate to fit, leaving room for ellipsis and safety margin
+    let l:max_content_width = l:available_width - 6
+
+    " Truncate character by character
+    let l:text_to_display = ''
+    let l:current_width = 0
+    for l:char in split(a:blame_text, '\zs')
+      let l:char_width = strdisplaywidth(l:char)
+      " Stop if adding this character would exceed max_content_width
+      if l:current_width + l:char_width > l:max_content_width
+        break
+      endif
+      let l:text_to_display .= l:char
+      let l:current_width += l:char_width
+    endfor
+
+    " Only add ellipsis if we actually truncated something
+    if l:text_to_display !=# a:blame_text
+      let l:text_to_display .= '...'
+    endif
+  endif
 
   " Add text property
   call prop_add(a:lnum, l:col, {
         \ 'type': 'GitBlame',
-        \ 'text': a:blame_text
+        \ 'text': l:text_to_display
         \ })
 endfunction
 
